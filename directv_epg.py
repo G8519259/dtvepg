@@ -236,10 +236,6 @@ def get_headers() -> dict:
 
 import re
 
-# 尾部画质标签匹配（(HD)/HD/SD/UHD/4K 等），用于去重时归一化频道名
-_QUALITY_TAG_RE = re.compile(r"[\s\(\[]*\b(hd|sd|uhd|4k)\b[\)\]]*\s*$", re.IGNORECASE)
-
-
 # 括号内容匹配（捕获内部文本）：(…) 或 […]
 _PARENS_RE = re.compile(r"[\(\[]([^\)\]]*)[\)\]]")
 # 单独的画质标签（整段等于 HD/SD/UHD/4K）
@@ -293,15 +289,18 @@ def clean_display_name(name: str) -> str:
 
 
 def normalize_channel_name(name: str) -> str:
-    """归一化频道名用于去重：转小写、去掉尾部画质标签(HD/SD/4K/UHD)、压缩空白。
+    """归一化频道名用于去重：采用与 clean_display_name 完全一致的清洗规则后转小写。
 
-    例如: 'CNN' / 'CNN HD' -> 'cnn'; 'ASPIRE (HD)' -> 'aspire'。
-    但保留 'CNNi'、'CNN en Espanol (103A)' 等不同频道。
+    这样去重键与 <display-name> 输出保持同一套规则：
+      - 去掉画质标签 HD/SD/4K/UHD 与噪音台号括号 (103A)/(99R)/(98-4)
+      - 保留有意义括号 (Alternate)/(East)/(Los Angeles)/(ABC) 等
+    因此:
+      'CNN' / 'CNN HD'                 -> 'cnn'                     （合并）
+      'CNN en Espanol (103A)'          -> 'cnn en espanol'          （与 CNN 区分）
+      'Altitude Sports HD'             -> 'altitude sports'
+      'Altitude Sports HD (Alternate)' -> 'altitude sports (alternate)'  （与主频道区分，不合并）
     """
-    n = (name or "").lower().strip()
-    n = _QUALITY_TAG_RE.sub("", n).strip()
-    n = re.sub(r"\s+", " ", n)
-    return n
+    return clean_display_name(name).lower()
 
 
 def is_hd_channel(ch_name: str, call_sign: str = "") -> bool:
