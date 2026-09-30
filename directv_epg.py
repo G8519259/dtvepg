@@ -753,12 +753,20 @@ def main():
         print(f"❌ 初始化 Headers 失败: {e}")
         return
 
+    # 生成时间（UTC）。
+    #   - date: 采用完整 XMLTV 时间格式 YYYYMMDDHHMMSS +0000（XMLTV 规范允许），标识文件生成时间
+    #   - generated-at: 额外提供 ISO 8601 时间戳，便于阅读与其他工具解析
+    generated_dt = datetime.now(timezone.utc)
+    generated_xmltv = generated_dt.strftime("%Y%m%d%H%M%S +0000")
+    generated_iso = generated_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
     tv = ET.Element(
         "tv",
         {
             "generator-info-name": "DirecTV-EPG-Generator",
             "generator-info-url": "https://www.directv.com/",
-            "date": datetime.now(timezone.utc).strftime("%Y%m%d"),
+            "date": generated_xmltv,
+            "generated-at": generated_iso,
         },
     )
 
