@@ -1,0 +1,9 @@
+# DirecTV EPG runtime artifacts
+directv_token.txt
+directv_epg.xml
+directv_epg.xml.gz
+DirectTVchannels.txt
+
+# Python
+__pycache__/
+*.pyc
