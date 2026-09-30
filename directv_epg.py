@@ -240,6 +240,58 @@ import re
 _QUALITY_TAG_RE = re.compile(r"[\s\(\[]*\b(hd|sd|uhd|4k)\b[\)\]]*\s*$", re.IGNORECASE)
 
 
+# 括号内容匹配（捕获内部文本）：(…) 或 […]
+_PARENS_RE = re.compile(r"[\(\[]([^\)\]]*)[\)\]]")
+# 单独的画质标签（整段等于 HD/SD/UHD/4K）
+_QUALITY_ONLY_RE = re.compile(r"^(hd|sd|uhd|4k)$", re.IGNORECASE)
+# 作为独立单词出现的画质标签（用于从任意位置移除）
+_QUALITY_WORD_RE = re.compile(r"\b(hd|sd|uhd|4k)\b", re.IGNORECASE)
+
+
+def _is_noise_paren(content: str) -> bool:
+    """判断括号内容是否为“噪音”（应删除）：
+      - 空
+      - 画质标签 HD/SD/UHD/4K
+      - 台号/代码：含数字且仅由字母数字/短横线/空格组成，且不含长度≥3 的字母单词
+        例如 '103A' '99R' '98-4' '213-2' -> 删除
+    保留有意义的词，如 'Alternate' 'East' 'West' 'Los Angeles' 'ABC' 'Steve Harvey'。
+    """
+    c = content.strip()
+    if not c:
+        return True
+    if _QUALITY_ONLY_RE.match(c):
+        return True
+    if re.search(r"\d", c) and re.fullmatch(r"[0-9A-Za-z\- ]+", c):
+        # 含数字的代码型内容；若其中包含长度≥3 的字母单词则视为有意义（如 'Alternate 2'）予以保留
+        if re.search(r"[A-Za-z]{3,}", c):
+            return False
+        return True
+    return False
+
+
+def clean_display_name(name: str) -> str:
+    """清洗用于 XMLTV <display-name> 的频道名（与去重规则一致）：
+      - 删除“噪音”括号：画质标签 (HD)/(SD) 与台号代码 (103A)/(99R)/(98-4) 等
+      - 保留有意义括号：(Alternate) / (East) / (West) / (Los Angeles) / (ABC) 等
+      - 删除任意位置作为独立单词出现的画质标签 HD/SD/4K/UHD
+      - 压缩多余空白
+    例如:
+      'Cinemax Classics HD'            -> 'Cinemax Classics'
+      'CNN en Espanol (103A)'          -> 'CNN en Espanol'
+      'Altitude Sports HD (Alternate)' -> 'Altitude Sports (Alternate)'   （保留 Alternate）
+    若清洗后为空，则回退为原始名称，避免出现空的 display-name。
+    """
+    original = (name or "").strip()
+
+    def _repl(m):
+        return "" if _is_noise_paren(m.group(1)) else m.group(0)
+
+    n = _PARENS_RE.sub(_repl, original)      # 删除噪音括号，保留有意义括号
+    n = _QUALITY_WORD_RE.sub("", n)          # 删除任意位置的 HD/SD/4K/UHD 独立单词
+    n = re.sub(r"\s+", " ", n).strip()
+    return n if n else original
+
+
 def normalize_channel_name(name: str) -> str:
     """归一化频道名用于去重：转小写、去掉尾部画质标签(HD/SD/4K/UHD)、压缩空白。
 
@@ -811,14 +863,16 @@ def main():
 
         ch_elem = ET.SubElement(tv, "channel", id=xml_id)
 
+        # 频道名按去重规则清洗（去括号内容与尾部 HD/SD/4K/UHD 标签）
+        display_name = clean_display_name(rec["ch_name"])
         name_elem = ET.SubElement(ch_elem, "display-name")
-        name_elem.text = rec["ch_name"]
+        name_elem.text = display_name
 
         if rec["ch_num"]:
             num_elem = ET.SubElement(ch_elem, "display-name")
             num_elem.text = rec["ch_num"]
 
-        if rec["call_sign"] and rec["call_sign"] != rec["ch_name"] and rec["call_sign"] != rec["ch_num"]:
+        if rec["call_sign"] and rec["call_sign"] != display_name and rec["call_sign"] != rec["ch_num"]:
             cs_elem = ET.SubElement(ch_elem, "display-name")
             cs_elem.text = rec["call_sign"]
 
