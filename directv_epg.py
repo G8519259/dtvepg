@@ -57,6 +57,30 @@ def _load_upload_config() -> Tuple[str, str, str]:
 
 UPLOAD_URL, UPLOAD_USER, UPLOAD_PASS = _load_upload_config()
 
+
+def _load_telegram_config() -> Tuple[str, str]:
+    """读取 Telegram 通知配置：环境变量优先，其次 config.ini 的 [telegram] 段。
+
+    未配置（缺少 bot_token 或 chat_id）时返回空字符串，脚本将跳过通知。
+    """
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+    if (not token or not chat_id) and os.path.exists(CONFIG_FILE):
+        try:
+            cp = configparser.ConfigParser()
+            cp.read(CONFIG_FILE, encoding="utf-8")
+            if cp.has_section("telegram"):
+                token = token or cp.get("telegram", "bot_token", fallback="")
+                chat_id = chat_id or cp.get("telegram", "chat_id", fallback="")
+        except Exception as e:
+            print(f"⚠️ 读取配置文件 {CONFIG_FILE} 的 telegram 段失败: {e}")
+
+    return token, chat_id
+
+
+TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID = _load_telegram_config()
+
 # -z all 时使用的内置 ZIP Code 列表（每个代表一个主要区域/RSN）
 BUILTIN_ZIP_CODES = [
     "95101",  # 湾区 / 加州 (San Jose / San Francisco)
@@ -588,6 +612,48 @@ def upload_file(file_path: str) -> bool:
         return False
 
 
+# ==================== Telegram 通知 ====================
+
+def send_telegram_message(text: str) -> bool:
+    """通过 Telegram Bot API 发送一条消息。
+
+    仅当配置了 bot_token 与 chat_id 时才发送；否则静默跳过。
+    """
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        # 未配置 Telegram，跳过（这是可选功能）
+        return False
+
+    api_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+
+    print("📨 正在发送 Telegram 通知...")
+    try:
+        resp = requests.post(api_url, json=payload, timeout=20)
+        if resp.status_code == 200 and resp.json().get("ok"):
+            print("✅ Telegram 通知发送成功。")
+            return True
+        print(f"❌ Telegram 通知发送失败，HTTP {resp.status_code}: {resp.text[:200]}")
+        return False
+    except Exception as e:
+        print(f"❌ 发送 Telegram 通知发生异常: {e}")
+        return False
+
+
+def human_size(num_bytes: int) -> str:
+    """将字节数格式化为人类可读大小。"""
+    size = float(num_bytes)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} {unit}"
+        size /= 1024
+    return f"{size:.1f} GB"
+
+
 # ==================== 主流程 ====================
 
 def main():
@@ -918,11 +984,34 @@ def main():
     gz_ok = gzip_file(OUTPUT_XML, OUTPUT_GZ)
 
     # 如指定 --upload，则将生成的 .gz 上传到 paste 服务
+    uploaded = False
     if args.upload:
         if gz_ok:
-            upload_file(OUTPUT_GZ)
+            uploaded = upload_file(OUTPUT_GZ)
         else:
             print("⚠️ 由于 .gz 生成失败，已跳过上传。")
+
+    # 如配置了 Telegram bot_token 与 chat_id，则发送本次抓取的汇总信息
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        gz_size = human_size(os.path.getsize(OUTPUT_GZ)) if gz_ok and os.path.exists(OUTPUT_GZ) else "N/A"
+        now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        zips_str = ", ".join(zip_list)
+        upload_line = ""
+        if args.upload:
+            upload_line = f"\n☁️ <b>Upload:</b> {'success' if uploaded else 'failed'}"
+
+        message = (
+            "📺 <b>DirecTV EPG updated</b>\n"
+            f"🗺️ <b>Regions (ZIPs):</b> {zips_str}\n"
+            f"📅 <b>Days:</b> {days_to_fetch}\n"
+            f"📡 <b>Channels:</b> {len(channel_info_list)}\n"
+            f"🎬 <b>Programmes:</b> {total_program_count}\n"
+            f"🖼️ <b>Icons:</b> {icon_count}\n"
+            f"🗜️ <b>File:</b> {OUTPUT_GZ} ({gz_size})"
+            f"{upload_line}\n"
+            f"🕒 <b>Generated:</b> {now_utc}"
+        )
+        send_telegram_message(message)
 
 
 if __name__ == "__main__":
