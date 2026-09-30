@@ -3,9 +3,9 @@ name: Update EPG
 # 每 12 小时抓取一次 DirecTV EPG，并把最新的 directv_epg.xml.gz 提交回仓库。
 # 不上传到远程 paste 服务（不使用 --upload）。
 on:
-  schedule:
-    # 每天 00:00 与 12:00 (UTC) 各运行一次，即每 12 小时
-    - cron: "0 0,12 * * *"
+  # ⏸️ 定时触发已禁用。需要时取消下面两行注释即可恢复每 12 小时自动运行。
+  # schedule:
+  #   - cron: "0 0,12 * * *"   # 每天 00:00 与 12:00 (UTC)，即每 12 小时
   workflow_dispatch: {}  # 允许在 Actions 页面手动触发
 
 # 允许工作流把生成的 .gz 提交回仓库
