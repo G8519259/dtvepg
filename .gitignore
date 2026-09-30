@@ -4,6 +4,9 @@ directv_epg.xml
 directv_epg.xml.gz
 DirectTVchannels.txt
 
+# Local config with real credentials (never commit; use config.example.ini as template)
+config.ini
+
 # Python
 __pycache__/
 *.pyc

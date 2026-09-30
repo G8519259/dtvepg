@@ -21,6 +21,42 @@ OUTPUT_XML = "directv_epg.xml"
 OUTPUT_GZ = "directv_epg.xml.gz"
 DEFAULT_FILTER_FILE = "DirectTVchannels.txt"
 
+# ==================== 上传配置 ====================
+# 上传目标为 pb.nanhui.eu.org 这类 paste 服务，使用 HTTP Basic Auth + multipart 表单字段 c。
+#   参考命令:
+#   curl -u USER:PASS -X PUT -Fc=@directv_epg.xml.gz URL
+#
+# 凭据不硬编码进仓库：
+#   1) 优先读取环境变量 EPG_UPLOAD_URL / EPG_UPLOAD_USER / EPG_UPLOAD_PASS
+#   2) 否则读取配置文件 config.ini 的 [upload] 段（见 config.example.ini）
+# config.ini 已被 .gitignore 忽略，不会提交到仓库。
+import configparser
+
+CONFIG_FILE = "config.ini"
+
+
+def _load_upload_config() -> Tuple[str, str, str]:
+    """读取上传配置：环境变量优先，其次 config.ini，最后为空字符串。"""
+    url = os.environ.get("EPG_UPLOAD_URL", "")
+    user = os.environ.get("EPG_UPLOAD_USER", "")
+    pwd = os.environ.get("EPG_UPLOAD_PASS", "")
+
+    if (not url or not user or not pwd) and os.path.exists(CONFIG_FILE):
+        try:
+            cp = configparser.ConfigParser()
+            cp.read(CONFIG_FILE, encoding="utf-8")
+            if cp.has_section("upload"):
+                url = url or cp.get("upload", "url", fallback="")
+                user = user or cp.get("upload", "username", fallback="")
+                pwd = pwd or cp.get("upload", "password", fallback="")
+        except Exception as e:
+            print(f"⚠️ 读取配置文件 {CONFIG_FILE} 失败: {e}")
+
+    return url, user, pwd
+
+
+UPLOAD_URL, UPLOAD_USER, UPLOAD_PASS = _load_upload_config()
+
 # -z all 时使用的内置 ZIP Code 列表（每个代表一个主要区域/RSN）
 BUILTIN_ZIP_CODES = [
     "95101",  # 湾区 / 加州 (San Jose / San Francisco)
@@ -498,6 +534,60 @@ def parse_program(prog):
         "episode": int(episode_num) if str(episode_num).isdigit() else None,
     }
 
+# ==================== 压缩与上传 ====================
+
+def gzip_file(src_path: str, dst_path: str) -> bool:
+    """将 src_path gzip 压缩为 dst_path。成功返回 True。"""
+    try:
+        print(f"正在压缩生成 {dst_path} ...")
+        with open(src_path, "rb") as f_in:
+            with gzip.open(dst_path, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        print(f"🎉 成功生成压缩包文件：{dst_path}")
+        return True
+    except Exception as e:
+        print(f"⚠️ 压缩生成 {dst_path} 失败: {e}")
+        return False
+
+
+def upload_file(file_path: str) -> bool:
+    """通过 HTTP PUT + multipart 表单字段 c 上传文件到 paste 服务（HTTP Basic Auth）。
+
+    等价于：
+      curl -u USER:PASS -X PUT -Fc=@file URL
+    """
+    if not os.path.exists(file_path):
+        print(f"⚠️ 待上传文件不存在: {file_path}")
+        return False
+
+    if not UPLOAD_URL or not UPLOAD_USER or not UPLOAD_PASS:
+        print(
+            "⚠️ 未配置上传信息，已跳过上传。\n"
+            "   请设置环境变量 EPG_UPLOAD_URL/EPG_UPLOAD_USER/EPG_UPLOAD_PASS，\n"
+            "   或复制 config.example.ini 为 config.ini 并填入真实值。"
+        )
+        return False
+
+    print(f"☁️ 正在上传 {file_path} 到 {UPLOAD_URL} ...")
+    try:
+        with open(file_path, "rb") as f:
+            files = {"c": (os.path.basename(file_path), f, "application/gzip")}
+            resp = requests.put(
+                UPLOAD_URL,
+                auth=(UPLOAD_USER, UPLOAD_PASS),
+                files=files,
+                timeout=60,
+            )
+        if 200 <= resp.status_code < 300:
+            print(f"✅ 上传成功 (HTTP {resp.status_code})。响应: {resp.text[:200]}")
+            return True
+        print(f"❌ 上传失败，HTTP {resp.status_code}。响应: {resp.text[:200]}")
+        return False
+    except Exception as e:
+        print(f"❌ 上传发生异常: {e}")
+        return False
+
+
 # ==================== 主流程 ====================
 
 def main():
@@ -519,6 +609,12 @@ def main():
         const=DEFAULT_FILTER_FILE,
         default=None,
         help="指定仅抓取的频道文件列表（例如: DirectTVchannels.txt）",
+    )
+    parser.add_argument(
+        "-u",
+        "--upload",
+        action="store_true",
+        help="生成 .gz 后自动上传到 paste 服务 (使用 EPG_UPLOAD_URL/USER/PASS 环境变量或内置默认值)",
     )
     args = parser.parse_args()
 
@@ -818,7 +914,15 @@ def main():
 
     print(f"🎉 成功生成 XMLTV 文件：{OUTPUT_XML}")
 
-    # ⏭️ 已按要求跳过 gzip 压缩与复制到 /root/epg_output 的步骤。
+    # 默认生成 gzip 压缩包（.gz 为默认最终产物）
+    gz_ok = gzip_file(OUTPUT_XML, OUTPUT_GZ)
+
+    # 如指定 --upload，则将生成的 .gz 上传到 paste 服务
+    if args.upload:
+        if gz_ok:
+            upload_file(OUTPUT_GZ)
+        else:
+            print("⚠️ 由于 .gz 生成失败，已跳过上传。")
 
 
 if __name__ == "__main__":
