@@ -306,14 +306,28 @@ def normalize_channel_name(name: str) -> str:
     return clean_display_name(name).lower()
 
 
-def is_hd_channel(ch_name: str, call_sign: str = "") -> bool:
-    """判断该频道是否为 HD 版本（用于同一频道 SD/HD 二选一时优先保留 HD）。
+def quality_rank(ch_name: str, call_sign: str = "") -> int:
+    """返回频道画质优先级，用于同一频道多个画质版本时的取舍：
 
-    仅依据 HD 标记；4K/UHD 已被视为不同频道（归一化后 key 不同），
-    不会与基础频道参与同一次 SD/HD 取舍，故此处无需匹配 4K/UHD。
+        HD (2)  >  Plain 无标记 (1)  >  SD (0)
+
+    说明：
+      - 名称或呼号中含独立单词 HD -> 2
+      - 含独立单词 SD（或 (SD)）  -> 0
+      - 两者都没有（普通频道）    -> 1
+    4K/UHD 已被视为不同频道（归一化 key 不同），不参与此处取舍。
     """
     text = f"{ch_name or ''} {call_sign or ''}".upper()
-    return bool(re.search(r"\bHD\b", text))
+    if re.search(r"\bHD\b", text):
+        return 2
+    if re.search(r"\bSD\b", text):
+        return 0
+    return 1
+
+
+def is_hd_channel(ch_name: str, call_sign: str = "") -> bool:
+    """兼容保留：是否为 HD 版本（等价于 quality_rank == 2）。"""
+    return quality_rank(ch_name, call_sign) == 2
 
 
 def load_channel_filter(file_path: str) -> Set[str]:
@@ -811,7 +825,7 @@ def main():
             total_seen += 1
 
             norm_name = normalize_channel_name(ch_name)
-            hd = is_hd_channel(ch_name, call_sign)
+            q_rank = quality_rank(ch_name, call_sign)  # HD(2) > Plain(1) > SD(0)
 
             # 判断是否与已选频道重复：优先 ccid，其次归一化名称
             dup_key = None
@@ -829,7 +843,7 @@ def main():
                 "call_sign": call_sign,
                 "logo_url": logo_url,
                 "source_zip": zip_code,
-                "is_hd": hd,
+                "quality_rank": q_rank,
                 "norm_name": norm_name,
             }
 
@@ -842,10 +856,11 @@ def main():
                 if norm_name:
                     name_index[norm_name] = key
             else:
-                # 与已选频道重复：仅当“新的是 HD 而旧的是 SD”时才替换（HD 优先）
+                # 与已选频道重复：按画质优先级取舍 HD(2) > Plain(1) > SD(0)，
+                # 仅当新版本画质严格高于已选版本时才替换。
                 existing = selected[dup_key]
-                if hd and not existing["is_hd"]:
-                    # 用 HD 版本替换旧的 SD 记录，并更新索引
+                if q_rank > existing.get("quality_rank", 1):
+                    # 用更高画质版本替换旧记录，并更新索引
                     old_ccid = existing.get("ccid")
                     old_norm = existing.get("norm_name")
                     selected[dup_key] = record
@@ -857,7 +872,7 @@ def main():
                         name_index.pop(old_norm, None)
                     if norm_name:
                         name_index[norm_name] = dup_key
-                # 否则保留已有版本（旧的是 HD，或两者同级）
+                # 否则保留已有版本（已选画质 >= 新版本）
 
     if not selected:
         print("❌ 所有区域均未匹配到有效频道，程序退出。")
