@@ -238,16 +238,17 @@ import re
 
 # 括号内容匹配（捕获内部文本）：(…) 或 […]
 _PARENS_RE = re.compile(r"[\(\[]([^\)\]]*)[\)\]]")
-# 单独的画质标签（整段等于 HD/SD/UHD/4K）
-_QUALITY_ONLY_RE = re.compile(r"^(hd|sd|uhd|4k)$", re.IGNORECASE)
-# 作为独立单词出现的画质标签（用于从任意位置移除）
-_QUALITY_WORD_RE = re.compile(r"\b(hd|sd|uhd|4k)\b", re.IGNORECASE)
+# 单独的画质标签（整段等于 HD/SD）。
+# 注意：4K / UHD 不在此列——它们通常是独立的频道/独立节目源，需保留以区分。
+_QUALITY_ONLY_RE = re.compile(r"^(hd|sd)$", re.IGNORECASE)
+# 作为独立单词出现的画质标签（用于从任意位置移除）。同样不包含 4K / UHD。
+_QUALITY_WORD_RE = re.compile(r"\b(hd|sd)\b", re.IGNORECASE)
 
 
 def _is_noise_paren(content: str) -> bool:
     """判断括号内容是否为“噪音”（应删除）：
       - 空
-      - 画质标签 HD/SD/UHD/4K
+      - 画质标签 HD/SD（但不含 4K/UHD——它们视为不同频道，予以保留）
       - 台号/代码：含数字且仅由字母数字/短横线/空格组成，且不含长度≥3 的字母单词
         例如 '103A' '99R' '98-4' '213-2' -> 删除
     保留有意义的词，如 'Alternate' 'East' 'West' 'Los Angeles' 'ABC' 'Steve Harvey'。
@@ -269,12 +270,13 @@ def clean_display_name(name: str) -> str:
     """清洗用于 XMLTV <display-name> 的频道名（与去重规则一致）：
       - 删除“噪音”括号：画质标签 (HD)/(SD) 与台号代码 (103A)/(99R)/(98-4) 等
       - 保留有意义括号：(Alternate) / (East) / (West) / (Los Angeles) / (ABC) 等
-      - 删除任意位置作为独立单词出现的画质标签 HD/SD/4K/UHD
+      - 删除任意位置作为独立单词出现的画质标签 HD/SD（但保留 4K / UHD 以区分频道）
       - 压缩多余空白
     例如:
       'Cinemax Classics HD'            -> 'Cinemax Classics'
       'CNN en Espanol (103A)'          -> 'CNN en Espanol'
       'Altitude Sports HD (Alternate)' -> 'Altitude Sports (Alternate)'   （保留 Alternate）
+      'FOX 4K' / 'FOX UHD'             -> 'FOX 4K' / 'FOX UHD'             （保留，不与 FOX 合并）
     若清洗后为空，则回退为原始名称，避免出现空的 display-name。
     """
     original = (name or "").strip()
@@ -292,10 +294,11 @@ def normalize_channel_name(name: str) -> str:
     """归一化频道名用于去重：采用与 clean_display_name 完全一致的清洗规则后转小写。
 
     这样去重键与 <display-name> 输出保持同一套规则：
-      - 去掉画质标签 HD/SD/4K/UHD 与噪音台号括号 (103A)/(99R)/(98-4)
-      - 保留有意义括号 (Alternate)/(East)/(Los Angeles)/(ABC) 等
+      - 去掉画质标签 HD/SD 与噪音台号括号 (103A)/(99R)/(98-4)
+      - 保留 4K/UHD 以及有意义括号 (Alternate)/(East)/(Los Angeles)/(ABC) 等
     因此:
       'CNN' / 'CNN HD'                 -> 'cnn'                     （合并）
+      'FOX 4K' / 'FOX UHD'             -> 'fox 4k' / 'fox uhd'      （与 FOX 区分，不合并）
       'CNN en Espanol (103A)'          -> 'cnn en espanol'          （与 CNN 区分）
       'Altitude Sports HD'             -> 'altitude sports'
       'Altitude Sports HD (Alternate)' -> 'altitude sports (alternate)'  （与主频道区分，不合并）
@@ -304,9 +307,13 @@ def normalize_channel_name(name: str) -> str:
 
 
 def is_hd_channel(ch_name: str, call_sign: str = "") -> bool:
-    """判断该频道是否为 HD 版本（依据名称或呼号中的 HD/UHD/4K 标记）。"""
+    """判断该频道是否为 HD 版本（用于同一频道 SD/HD 二选一时优先保留 HD）。
+
+    仅依据 HD 标记；4K/UHD 已被视为不同频道（归一化后 key 不同），
+    不会与基础频道参与同一次 SD/HD 取舍，故此处无需匹配 4K/UHD。
+    """
     text = f"{ch_name or ''} {call_sign or ''}".upper()
-    return bool(re.search(r"\b(HD|UHD|4K)\b", text))
+    return bool(re.search(r"\bHD\b", text))
 
 
 def load_channel_filter(file_path: str) -> Set[str]:
