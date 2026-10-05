@@ -81,13 +81,223 @@ def _load_telegram_config() -> Tuple[str, str]:
 
 TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID = _load_telegram_config()
 
-# -z all 时使用的内置 ZIP Code 列表（每个代表一个主要区域/RSN）
+# -z all 时使用的内置 ZIP Code 列表：覆盖全美约 200 个最大城市，
+# 每个城市取一个市中心代表性 ZIP。用于跨区域聚合以收集各地本地频道，
+# 并按 ccid / 归一化名称去重（HD>Plain>SD）。
+# 列表经 DirecTV 频道接口验证，均能返回频道。
 BUILTIN_ZIP_CODES = [
-    "95101",  # 湾区 / 加州 (San Jose / San Francisco)
-    "10001",  # 纽约大都会 (New York)
-    "90001",  # 洛杉矶 (Los Angeles)
-    "60601",  # 芝加哥 (Chicago)
-    "02108",  # 波士顿 / 新英格兰 (Boston)
+    "10001",  # New York, NY
+    "90012",  # Los Angeles, CA
+    "60601",  # Chicago, IL
+    "77002",  # Houston, TX
+    "85004",  # Phoenix, AZ
+    "19107",  # Philadelphia, PA
+    "78205",  # San Antonio, TX
+    "92101",  # San Diego, CA
+    "75201",  # Dallas, TX
+    "95113",  # San Jose, CA
+    "78701",  # Austin, TX
+    "32202",  # Jacksonville, FL
+    "76102",  # Fort Worth, TX
+    "43215",  # Columbus, OH
+    "28202",  # Charlotte, NC
+    "46204",  # Indianapolis, IN
+    "94103",  # San Francisco, CA
+    "98101",  # Seattle, WA
+    "80202",  # Denver, CO
+    "20001",  # Washington, DC
+    "37203",  # Nashville, TN
+    "73102",  # Oklahoma City, OK
+    "79901",  # El Paso, TX
+    "02108",  # Boston, MA
+    "97204",  # Portland, OR
+    "89101",  # Las Vegas, NV
+    "48226",  # Detroit, MI
+    "38103",  # Memphis, TN
+    "40202",  # Louisville, KY
+    "21202",  # Baltimore, MD
+    "53202",  # Milwaukee, WI
+    "87102",  # Albuquerque, NM
+    "85701",  # Tucson, AZ
+    "93721",  # Fresno, CA
+    "95814",  # Sacramento, CA
+    "64106",  # Kansas City, MO
+    "85201",  # Mesa, AZ
+    "30303",  # Atlanta, GA
+    "68102",  # Omaha, NE
+    "80903",  # Colorado Springs, CO
+    "27601",  # Raleigh, NC
+    "90802",  # Long Beach, CA
+    "23451",  # Virginia Beach, VA
+    "33130",  # Miami, FL
+    "94607",  # Oakland, CA
+    "55401",  # Minneapolis, MN
+    "74103",  # Tulsa, OK
+    "93301",  # Bakersfield, CA
+    "67202",  # Wichita, KS
+    "76010",  # Arlington, TX
+    "80012",  # Aurora, CO
+    "33602",  # Tampa, FL
+    "70112",  # New Orleans, LA
+    "44113",  # Cleveland, OH
+    "96813",  # Honolulu, HI
+    "92805",  # Anaheim, CA
+    "40507",  # Lexington, KY
+    "95202",  # Stockton, CA
+    "78401",  # Corpus Christi, TX
+    "89002",  # Henderson, NV
+    "92501",  # Riverside, CA
+    "07102",  # Newark, NJ
+    "55102",  # Saint Paul, MN
+    "92701",  # Santa Ana, CA
+    "45202",  # Cincinnati, OH
+    "92618",  # Irvine, CA
+    "32801",  # Orlando, FL
+    "15222",  # Pittsburgh, PA
+    "63101",  # St. Louis, MO
+    "27401",  # Greensboro, NC
+    "07302",  # Jersey City, NJ
+    "99501",  # Anchorage, AK
+    "68508",  # Lincoln, NE
+    "75074",  # Plano, TX
+    "27701",  # Durham, NC
+    "14202",  # Buffalo, NY
+    "85225",  # Chandler, AZ
+    "91910",  # Chula Vista, CA
+    "43604",  # Toledo, OH
+    "53703",  # Madison, WI
+    "85234",  # Gilbert, AZ
+    "89501",  # Reno, NV
+    "46802",  # Fort Wayne, IN
+    "89030",  # North Las Vegas, NV
+    "33701",  # St. Petersburg, FL
+    "79401",  # Lubbock, TX
+    "75060",  # Irving, TX
+    "78040",  # Laredo, TX
+    "27101",  # Winston-Salem, NC
+    "23320",  # Chesapeake, VA
+    "85301",  # Glendale, AZ
+    "75040",  # Garland, TX
+    "85251",  # Scottsdale, AZ
+    "23510",  # Norfolk, VA
+    "83702",  # Boise, ID
+    "94538",  # Fremont, CA
+    "99201",  # Spokane, WA
+    "91321",  # Santa Clarita, CA
+    "70801",  # Baton Rouge, LA
+    "23219",  # Richmond, VA
+    "33010",  # Hialeah, FL
+    "92401",  # San Bernardino, CA
+    "98402",  # Tacoma, WA
+    "95354",  # Modesto, CA
+    "35801",  # Huntsville, AL
+    "50309",  # Des Moines, IA
+    "10701",  # Yonkers, NY
+    "14604",  # Rochester, NY
+    "92553",  # Moreno Valley, CA
+    "28301",  # Fayetteville, NC
+    "92335",  # Fontana, CA
+    "31901",  # Columbus, GA
+    "01608",  # Worcester, MA
+    "34952",  # Port St. Lucie, FL
+    "72201",  # Little Rock, AR
+    "30901",  # Augusta, GA
+    "93030",  # Oxnard, CA
+    "35203",  # Birmingham, AL
+    "36104",  # Montgomery, AL
+    "75034",  # Frisco, TX
+    "79101",  # Amarillo, TX
+    "84101",  # Salt Lake City, UT
+    "49503",  # Grand Rapids, MI
+    "92648",  # Huntington Beach, CA
+    "66204",  # Overland Park, KS
+    "91203",  # Glendale, CA
+    "32301",  # Tallahassee, FL
+    "75050",  # Grand Prairie, TX
+    "75069",  # McKinney, TX
+    "33904",  # Cape Coral, FL
+    "57104",  # Sioux Falls, SD
+    "85345",  # Peoria, AZ
+    "02903",  # Providence, RI
+    "98660",  # Vancouver, WA
+    "37902",  # Knoxville, TN
+    "44308",  # Akron, OH
+    "71101",  # Shreveport, LA
+    "36602",  # Mobile, AL
+    "37402",  # Chattanooga, TN
+    "33301",  # Fort Lauderdale, FL
+    "60505",  # Aurora, IL
+    "95624",  # Elk Grove, CA
+    "91764",  # Ontario, CA
+    "97301",  # Salem, OR
+    "27511",  # Cary, NC
+    "95401",  # Santa Rosa, CA
+    "91730",  # Rancho Cucamonga, CA
+    "97401",  # Eugene, OR
+    "92054",  # Oceanside, CA
+    "37040",  # Clarksville, TN
+    "92840",  # Garden Grove, CA
+    "33025",  # Pembroke Pines / Miramar, FL
+    "93534",  # Lancaster, CA
+    "80521",  # Fort Collins, CO
+    "93550",  # Palmdale, CA
+    "65806",  # Springfield, MO
+    "94541",  # Hayward, CA
+    "92879",  # Corona, CA
+    "93901",  # Salinas, CA
+    "07501",  # Paterson, NJ
+    "37130",  # Murfreesboro, TN
+    "31201",  # Macon, GA
+    "80226",  # Lakewood, CO
+    "76541",  # Killeen, TX
+    "01103",  # Springfield, MA
+    "22314",  # Alexandria, VA
+    "66101",  # Kansas City, KS
+    "94085",  # Sunnyvale, CA
+    "33019",  # Hollywood, FL
+    "95678",  # Roseville, CA
+    "29401",  # Charleston, SC
+    "92025",  # Escondido, CA
+    "60432",  # Joliet, IL
+    "39201",  # Jackson, MS
+    "98004",  # Bellevue, WA
+    "85374",  # Surprise, AZ
+    "60540",  # Naperville, IL
+    "77506",  # Pasadena, TX
+    "91766",  # Pomona, CA
+    "06604",  # Bridgeport, CT
+    "76201",  # Denton, TX
+    "61101",  # Rockford, IL
+    "75149",  # Mesquite, TX
+    "31401",  # Savannah, GA
+    "13202",  # Syracuse, NY
+    "78501",  # McAllen, TX
+    "90501",  # Torrance, CA
+    "66061",  # Olathe, KS
+    "93291",  # Visalia, CA
+    "80229",  # Thornton, CO
+    "92831",  # Fullerton, CA
+    "32601",  # Gainesville, FL
+    "76701",  # Waco, TX
+    "84119",  # West Valley City, UT
+    "48088",  # Warren, MI
+    "23669",  # Hampton, VA
+    "45402",  # Dayton, OH
+    "29201",  # Columbia, SC
+    "92866",  # Orange, CA
+    "52401",  # Cedar Rapids, IA
+    "06901",  # Stamford, CT
+    "92392",  # Victorville, CA
+    "91101",  # Pasadena, CA
+    "07201",  # Elizabeth, NJ
+    "06510",  # New Haven, CT
+    "98030",  # Kent, WA
+    "48310",  # Sterling Heights, MI
+    "75006",  # Carrollton, TX
+    "33065",  # Coral Springs, FL
+    "79701",  # Midland, TX
+    "73069",  # Norman, OK
+    "30601",  # Athens, GA
 ]
 
 # 自动获取 Guest Token 接口
@@ -302,8 +512,14 @@ def normalize_channel_name(name: str) -> str:
       'CNN en Espanol (103A)'          -> 'cnn en espanol'          （与 CNN 区分）
       'Altitude Sports HD'             -> 'altitude sports'
       'Altitude Sports HD (Alternate)' -> 'altitude sports (alternate)'  （与主频道区分，不合并）
+      'ESPN 2' / 'ESPN2'               -> 'espn2'                   （合并：去掉字母与尾部数字间空格）
+    注意：仅去重键做此处理，<display-name> 仍保留原始清洗后的名称（如 'ESPN 2'）。
     """
-    return clean_display_name(name).lower()
+    key = clean_display_name(name).lower()
+    # 去掉“字母 + 尾部数字组”之间的空格，使 'espn 2' 与 'espn2' 归一化为同一键。
+    # 仅处理末尾的数字组，避免影响标题中间的数字（如 'channel 4 news'）。
+    key = re.sub(r"(?<=[a-z])\s+(\d+)$", r"\1", key)
+    return key
 
 
 def quality_rank(ch_name: str, call_sign: str = "") -> int:
