@@ -19,7 +19,8 @@ concurrency:
 jobs:
   build-epg:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # ~200 个 ZIP 的完整抓取耗时较长，放宽超时上限（GitHub 允许最大 360 分钟）。
+    timeout-minutes: 330
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,7 +37,8 @@ jobs:
 
       - name: Fetch EPG (all regions, 3 days) and gzip
         run: |
-          python directv_epg.py -z all -d 3
+          # --sleep 增大请求间延迟以温和限速，避免压垮 DirecTV 接口
+          python -u directv_epg.py -z all -d 3 --sleep 0.1
 
       - name: Verify output exists
         run: |

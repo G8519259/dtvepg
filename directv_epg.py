@@ -970,12 +970,31 @@ def main():
         action="store_true",
         help="生成 .gz 后自动上传到 paste 服务 (使用 EPG_UPLOAD_URL/USER/PASS 环境变量或内置默认值)",
     )
+    parser.add_argument(
+        "--max-zips",
+        type=int,
+        default=0,
+        help="限制 -z all 时实际抓取的 ZIP 数量（0 表示不限制，使用全部内置 ZIP）",
+    )
+    parser.add_argument(
+        "--sleep",
+        type=float,
+        default=0.05,
+        help="每次节目单请求之间的延迟秒数（默认 0.05，用于限速、避免压垮接口）",
+    )
     args = parser.parse_args()
+
+    # 请求间延迟（秒），下限 0
+    request_sleep = max(0.0, args.sleep)
 
     # 确定要抓取的 ZIP Code 列表：'all' -> 内置多区域列表；否则单个 ZIP
     if args.zip.strip().lower() == "all":
         zip_list = list(BUILTIN_ZIP_CODES)
-        print(f"🌐 目标区域 ZIP Code: ALL -> {zip_list}")
+        if args.max_zips and args.max_zips > 0:
+            zip_list = zip_list[: args.max_zips]
+            print(f"🌐 目标区域 ZIP Code: ALL（已限制为前 {len(zip_list)} 个）")
+        else:
+            print(f"🌐 目标区域 ZIP Code: ALL（共 {len(zip_list)} 个）")
     else:
         zip_list = [args.zip.strip()]
         print(f"🌐 目标区域 ZIP Code: {args.zip}")
@@ -1020,6 +1039,8 @@ def main():
         ctx = build_client_context(zip_code=zip_code)
         print(f"\n🗺️  === 抓取区域 ZIP {zip_code} 的频道列表 ===")
         channels = fetch_channels(headers, ctx)
+        if request_sleep:
+            time.sleep(request_sleep)  # 频道列表请求之间限速
         if not channels:
             print(f"⚠️ ZIP {zip_code} 未获取到任何频道，跳过。")
             continue
@@ -1265,7 +1286,8 @@ def main():
                         )
                         sys.exit(1)
 
-                time.sleep(0.05)
+                if request_sleep:
+                    time.sleep(request_sleep)  # 节目单请求之间限速
 
     print(f"\n✅ 节目单全部解析完成，共生成 {total_program_count} 条节目记录。")
 
