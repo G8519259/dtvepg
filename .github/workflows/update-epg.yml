@@ -35,6 +35,11 @@ jobs:
           pip install -r requirements.txt
 
       - name: Fetch EPG (all regions, 3 days) and gzip
+        env:
+          # Telegram 通知凭据来自仓库 Secrets（Settings → Secrets and variables → Actions）。
+          # 若未设置这两个 Secret，脚本会自动跳过通知（功能可选）。
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           # --sleep 增大请求间延迟以温和限速，避免压垮 DirecTV 接口
           python -u directv_epg.py -z all -d 3 --sleep 0.1
